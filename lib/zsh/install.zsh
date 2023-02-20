@@ -511,12 +511,14 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 # $3 - if 1, then reinstall, otherwise only install completions that aren't there
 .zi-install-completions() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt null_glob extended_glob warn_create_global typeset_silent no_short_loops
+  builtin setopt null_glob extended_glob warn_create_global typeset_silent no_short_loops no_auto_pushd
 
   local id_as=$1${2:+${${${(M)1:#%}:+$2}:-/$2}}
   local reinstall=${3:-0} quiet=${${4:+1}:-0}
+
   (( OPTS[opt_-q,--quiet] )) && quiet=1
-  [[ $4 = -Q ]] && quiet=2
+  [[ $4 = -[qQ] ]] && quiet=2
+
   typeset -ga INSTALLED_COMPS SKIPPED_COMPS
   INSTALLED_COMPS=() SKIPPED_COMPS=()
 
@@ -544,32 +546,29 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
   for c in "${completions[@]}"; do
     cfile="${c:t}"
     bkpfile="${cfile#_}"
-    if [[ ( -z ${already_symlinked[(r)*/$cfile]} || $reinstall = 1 ) &&
-      -z ${backup_comps[(r)*/$bkpfile]}
-    ]]; then
+    if [[ ( -z ${already_symlinked[(r)*/$cfile]} || $reinstall = 1 ) && -z ${backup_comps[(r)*/$bkpfile]} ]]; then
       if [[ $reinstall = 1 ]]; then
         # Remove old files
-        command rm -f "${ZI[ZCOMPDUMP_PATH]}"
         command rm -f "${ZI[COMPLETIONS_DIR]}/${cfile}" "${ZI[COMPLETIONS_DIR]}/${bkpfile}"
       fi
       INSTALLED_COMPS+=( $cfile )
-      (( quiet )) || +zi-message "{auto}Symlinking completion \`$cfile' to completions directory{…}{rst}"
+      (( quiet )) || +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}activating $cfile"
       command ln -fs "$c" "${ZI[COMPLETIONS_DIR]}/${cfile}"
       # Make compinit notice the change
       .zi-forget-completion "$cfile" "$quiet"
     else
       SKIPPED_COMPS+=( $cfile )
-      (( quiet )) || +zi-message "{auto}Not symlinking completion \`$cfile', it already exists{…}{rst}"
-      (( quiet )) || +zi-message "{mmdsh}{rst} {auto}Use \`zi creinstall $abbrev_pspec' to force install"
+      (( quiet )) || +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}the \`$cfile\` is already active{…}{rst}"
+      (( quiet )) || +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}use zi creinstall{rst} ${abbrev_pspec}{rst}{auto} to force install"
     fi
   done
 
   if (( quiet == 1 && (${#INSTALLED_COMPS} || ${#SKIPPED_COMPS}) )) {
-    +zi-message "{msg}Installed {num}${#INSTALLED_COMPS} {msg}completions" \
-      "{nl}{mmdsh} They are stored in{var} \$INSTALLED_COMPS{msg} array"
+    +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}installed ${#INSTALLED_COMPS} new{rst}" \
+      "{nl}{mmdsh}{faint} stored in{var} \$INSTALLED_COMPS{faint} array{…}{rst}"
     if (( ${#SKIPPED_COMPS} )) {
-      +zi-message "{msg}Skipped installing {num}${#SKIPPED_COMPS}{msg} completions" \
-        "{nl}{mmdsh} They are stored in{var} \$SKIPPED_COMPS{msg} array"
+      +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}skipped ${#SKIPPED_COMPS} already active{rst}" \
+        "{nl}{mmdsh}{faint} stored in{var} \$SKIPPED_COMPS{faint} array{…}{rst}"
     }
   }
 
@@ -578,7 +577,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
     builtin print -rl -- $SKIPPED_COMPS >! ${TMPDIR:-/tmp}/zi.skipped_comps.$$.lst
   }
 
-  .zi-compinit 1 1 &>/dev/null; rehash
+  .zi-compinit 0 $reinstall $quiet
 } # ]]]
 # FUNCTION: .zi-compinit [[[
 .zi-compinit() {
@@ -586,12 +585,16 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
   builtin setopt null_glob extended_glob warn_create_global typeset_silent
 
-  integer use_C=$2
+  local quiet=$3; integer use_C=$2
+  (( OPTS[opt_-q,--quiet] )) && quiet=1
+  [[ $quiet = -[qQ] ]] && quiet=2
+  (( quiet )) || +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}initializing compinit{rst}{…}"
 
-  +zi-message "{mmdsh}{happy} Zi{rst} » {faint}initializing {func}compinit{rst}{…}"
+  # If we're not using -C, we need to remove the cache file to make sure compinit notices the changes
+  (( use_C )) || command rm -f "${ZI[ZCOMPDUMP_PATH]}" 2>/dev/null
 
   builtin autoload -Uz compinit
-  compinit ${${(M)use_C:#1}:+-C} -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}"
+  compinit ${${(M)use_C:#1}:+-C} -d "$ZI[ZCOMPDUMP_PATH]" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}" 2>/dev/null
 } # ]]]
 # FUNCTION: .zi-download-file-stdout [[[
 # Downloads file to stdout.
@@ -729,26 +732,25 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 # $1 - completion function name, e.g. "_cp"; can also be "cp"
 .zi-forget-completion() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob typesetsilent warncreateglobal
+  builtin setopt extended_glob typeset_silent warn_create_global no_auto_pushd
 
   local f="$1" quiet="$2"
 
-  typeset -a commands
-  commands=( ${(k)_comps[(Re)$f]} )
+  typeset -a comp_cmds
+  comp_cmds=( ${(k)_comps[(Re)$f]} )
 
-  [[ "${#commands}" -gt 0 ]] && (( quiet == 0 )) && builtin print -Prn "Forgetting commands completed by \`${ZI[col-obj]}$f%f%b': "
+  [[ "${#comp_cmds}" -gt 0 ]] && (( quiet == 0 )) && +zi-message -n "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}deactivating $f associated with{rst} "
 
   local k
   integer first=1
-  for k ( $commands ) {
+  for k ( $comp_cmds[@] ); do
     unset "_comps[$k]"
-    (( quiet )) || builtin print -Prn "${${first:#1}:+, }${ZI[col-info]}$k%f%b"
+    (( quiet )) || +zi-message -n "${${(M)first:#1}:+}{cmd}${k}{rst}"
     first=0
-  }
+  done
   (( quiet || first )) || builtin print
 
   unfunction -- 2>/dev/null "$f"
-  .zi-compinit 1 1 &>/dev/null; rehash
 } # ]]]
 # FUNCTION: .zi-compile-plugin [[[
 # Compiles given plugin (its main source file, and also an additional "....zsh" file if it exists).

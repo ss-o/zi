@@ -540,10 +540,12 @@ ZI[EXTENDED_GLOB]=""
 # $2 - plugin (only when $1 - i.e. user - given)
 .zi-uninstall-completions() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt null_glob extended_glob warn_create_global typeset_silent no_short_loops
+  builtin setopt null_glob extended_glob warn_create_global typeset_silent no_short_loops no_ksh_glob no_ksh_arrays
+
   typeset -a completions symlinked backup_comps
-  local c cfile bkpfile
+  local c cfile bkpfile quiet=$3
   integer action global_action=0
+
   .zi-get-path "$1" "$2"
   [[ -e $REPLY ]] && {
     completions=( $REPLY/**/_[^_.]*~*(*.zwc|*.html|*.txt|*.png|*.jpg|*.jpeg|*.js|*.md|*.yml|*.ri|_zsh_highlight*|/zsdoc/*|*.ps1)(DN) )
@@ -571,22 +573,22 @@ ZI[EXTENDED_GLOB]=""
       action=1
     fi
     if (( action )); then
-      +zi-message "{auto}Uninstalling completion \`$cfile' …"
+      +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}uninstalling \`$cfile\`"
       # Make compinit notice the change
-      .zi-forget-completion "$cfile"
+      .zi-forget-completion "$cfile" "$quiet"
       (( global_action ++ ))
     else
-      +zi-message "{auto}Completion \`$cfile' not installed"
+      +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}\`$cfile\` not installed"
     fi
   done
   if (( global_action > 0 )); then
-    +zi-message "{msg}Uninstalled {num}$global_action{rst} completions"
+    +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » {auto}uninstalled $global_action"
   fi
 
   # Workaround for a nasty trick in _vim
   (( ${+functions[_vim_files]} )) && unfunction _vim_files
 
-  .zi-compinit 1 1 &>/dev/null
+  .zi-compinit 0 1 $quiet
 } # ]]]
 
 #
@@ -712,7 +714,7 @@ ZI[EXTENDED_GLOB]=""
       if (( ! dry_run )); then
         # Update the codebase
         command git merge -n $opt --autostash --ff-only FETCH_HEAD || \
-          { (( quiet )) || +zi-message "{mmdsh}{happy} Zi{rst} » {profile}update failed {quos}✘{rst}"; return 1 }
+          { (( quiet )) || +zi-message "{mmdsh}{happy} Zi{rst} » {profile}update failed {quos}✘{rst}"; return 1; }
         .zi-auto-reload $opt
       fi
     else
@@ -1925,9 +1927,9 @@ ZI[EXTENDED_GLOB]=""
 #
 # User-action entry point.
 .zi-times() {
-builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-builtin setopt extended_glob warn_create_global typeset_silent \
-  no_short_loops rc_quotes no_auto_pushd no_bang_hist
+  builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
+  builtin setopt extended_glob warn_create_global typeset_silent \
+    no_short_loops no_auto_pushd null_glob no_ksh_glob no_ksh_arrays
 
   local opt="$1 $2 $3" entry entry2 entry3 user plugin
   float -F 3 sum=0.0
@@ -2202,7 +2204,7 @@ builtin setopt extended_glob warn_create_global typeset_silent \
 #
 # User-action entry point.
 .zi-clear-completions() {
-  builtin setopt localoptions nullglob extendedglob nokshglob noksharrays
+  builtin setopt local_options null_glob extended_glob no_ksh_glob no_ksh_arrays
 
   typeset -a completions
   completions=( "${ZI[COMPLETIONS_DIR]}"/_[^_.]*~*.zwc "${ZI[COMPLETIONS_DIR]}"/[^_.]*~*.zwc )
@@ -2244,6 +2246,8 @@ builtin setopt extended_glob warn_create_global typeset_silent \
       command rm -f "$cpath"
     fi
   done
+  (( ${+functions[.zi-compinit]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
+  .zi-compinit 1 1 &>/dev/null
 } # ]]]
 # FUNCTION: .zi-search-completions [[[
 # While .zi-show-completions() shows what completions are
@@ -2964,10 +2968,7 @@ EOF
       local recompile_request_ts="$(<${ZI[ZMODULES_DIR]}/zpmod/RECOMPILE_REQUEST)"
     if [[ ${recompile_request_ts:-1} -gt ${compiled_at_ts:-0} ]]; then
       +zi-message "{warn}Warning{warn}{ehi}:{rst} {lhi}recompilation{rst} of the {bcmd}zpmod{rst} module has been requested…"
-      (( ${+functions[.zi-confirm]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/autoload.zsh" || return 1
-      .zi-confirm "Do you want to proceed?" || return 1
-      command make -C "${ZI[ZMODULES_DIR]}/zpmod" distclean &>/dev/null
-      .zi-module --build
+      command make -C "${ZI[ZMODULES_DIR]}/zpmod" distclean; .zi-module --build
     fi
   elif [[ "$1" = (-B|--build|build) ]]; then
     builtin autoload -Uz is-at-least

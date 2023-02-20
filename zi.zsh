@@ -1756,7 +1756,8 @@ builtin setopt noaliases
 # [single-char bits and quoted strings (`...`, ,'...', "...")].
 .zi-formatter-auto() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extended_glob warn_create_global typeset_silent no_short_loops rc_quotes no_auto_pushd
+  builtin setopt extended_glob warn_create_global typeset_silent \
+    no_short_loops rc_quotes no_auto_pushd localoptions
 
   local MATCH in=$1 out rwmsg spaces rest; integer MBEGIN MEND
   local -a match mbegin mend ice_order ecmds
@@ -1777,7 +1778,9 @@ builtin setopt noaliases
       [[ $rwmsg != *[sm]* ]] && rest=$ZI[col-time]${(M)rest##[[:space:]]#[sm]}$ZI[col-rst]${rest##[[:space:]]#[sm]}
     elif [[ $rwmsg == ([[:space:]]##|(#s))[0-9.]##([[:space:]]##|(#e)) ]]; then
       REPLY=${ZI[col-num]}$rwmsg${ZI[col-rst]}
-    elif [[ $rwmsg == (#b)(--|)(${(~j:|:)ice_order})([:=\"\'\!a-zA-Z0-9-][^\"\']##[^a-zA-Z0-9]##) ]]; then
+    elif [[ $rwmsg == (#b)((http(s|)|ftp(s|)|rsync|ssh|scp|ntp|file)://[[:alnum:].:+/]##) ]]; then
+      .zi-formatter-url $rwmsg
+    elif [[ $rwmsg == (#b)(--|)(${(~j:|:)ice_order})[:=\"\'\!a-zA-Z0-9-](*) ]]; then
       REPLY=${ZI[col-ice]}$rwmsg${ZI[col-rst]}
     elif [[ $rwmsg == (${~ZI[cmd-list]}|${(~j:|:)ecmds}) ]]; then
       REPLY=${ZI[col-cmd]}$rwmsg${ZI[col-rst]}
@@ -1785,15 +1788,13 @@ builtin setopt noaliases
       REPLY=${ZI[col-bcmd]}$rwmsg${ZI[col-rst]}
     elif (( $+functions[$rwmsg] )); then
       REPLY=${ZI[col-func]}$rwmsg${ZI[col-rst]}
-    elif [[ $rwmsg == (#b)((http(s|)|ftp(s|)|rsync|ssh|scp|ntp|file)://[[:alnum:].:+/]##) ]]; then
-      .zi-formatter-url $rwmsg
     elif [[ $rwmsg == (OMZ|PZT|PZTM|OMZP|OMZT|OMZL)::* || $rwmsg == [^/]##/[^/]## || -d ${ZI[PLUGINS_DIR]}/${rwmsg//\//---} ]]; then
       .zi-formatter-pid $rwmsg
     elif [[ $rwmsg == (#b)(*)(...|'<->'|'<–>'|'<—>')(*) || $rwmsg == (#b)(*)(…|–|—|――|↔|...)(*) ]]; then
       local -A map=( … … - dsh – ndsh — mdsh ―― mmdsh '<->' ↔ '<–>' ↔ '<—>' ↔ ↔ ↔ ... … )
       local openq=$match[2] str=$match[3] closeq=$match[4] RST=$ZI[col-rst]
       REPLY=$match[1]$ZI[col-${map[$openq]}]$str$RST$ZI[col-${map[$closeq]}]$match[5]$ZI[col-rst]
-    # \1 - preceding \2 - open, \3 - string, \4 - close, \5 - following
+      # \1 - preceding \2 - open, \3 - string, \4 - close, \5 - following
     elif [[ $rwmsg == (#b)(*)([\'\`\"])([^\'\`\"]##)([\'\`\"])(*) ]]; then
       local -A map=( \` bapo \' apo \" quo x\` baps x\' aps x\" quos )
       local openq=$match[2] str=$match[3] closeq=$match[4] RST=$ZI[col-rst]
@@ -1896,9 +1897,10 @@ builtin setopt noaliases
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
   builtin setopt extended_glob warn_create_global typeset_silent no_short_loops rc_quotes no_auto_pushd
 
-  local MATCH opt msg; integer MBEGIN MEND
-  local -a match mbegin mend
+  local MATCH REPLY opt msg; integer MBEGIN MEND
+  local -a match mbegin mend reply
 
+  # Parse options.
   [[ $1 = -* ]] && { local opt=$1; shift; }
 
   ZI[__last-formatter-code]=
@@ -2327,7 +2329,7 @@ zi() {
     update        "-h|--help|-l|--plugins|-s|--snippets|-p|--parallel|-a|--all|-q|--quiet|-r|--reset|-u|--urge|-n|--no-pager|-v|--verbose"
     self-update   "-h|--help|-q|--quiet|-D|--dry-run"
     compile       "-h|--help|-a|--all|-q|--quiet"
-    uncompile       "-h|--help|-a|--all|-q|--quiet"
+    uncompile     "-h|--help|-a|--all|-q|--quiet"
     delete        "-h|--help|-a|--all|-c|--clean|-y|--yes|-q|--quiet"
     unload        "-h|--help|-q|--quiet"
     cdclear       "-h|--help|-q|--quiet"
@@ -2690,7 +2692,7 @@ zi() {
           ;;
         (cclear)
           # Delete stray and improper completions.
-          .zi-clear-completions
+          .zi-clear-completions "$2"
           ;;
         (cdisable)
           if [[ -z $2 ]]; then
@@ -2700,8 +2702,7 @@ zi() {
             # Disable completion given by completion function name with or without leading _, e.g. cp, _cp.
             if .zi-cdisable "$___f"; then
               (( ${+functions[.zi-forget-completion]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
-              .zi-forget-completion "$___f"
-              .zi-compinit 1 1 &>/dev/null
+              .zi-forget-completion "$___f"; .zi-compinit &>/dev/null
             else
               ___retval=1
             fi
@@ -2715,8 +2716,7 @@ zi() {
             # Enable completion given by completion function name with or without leading _, e.g. cp, _cp.
             if .zi-cenable "$___f"; then
               (( ${+functions[.zi-forget-completion]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
-              .zi-forget-completion "$___f"
-              .zi-compinit 1 1 &>/dev/null
+              .zi-forget-completion "$___f"; .zi-compinit &>/dev/null
             else
               ___retval=1
             fi
@@ -2743,7 +2743,7 @@ zi() {
           ;;
         (compinit)
           (( ${+functions[.zi-compinit]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
-          .zi-compinit; ___retval=$?
+          .zi-compinit "$2" "$3" "$4"; ___retval=$?
           ;;
         (dreport)
           .zi-show-debug-report
@@ -2762,7 +2762,7 @@ zi() {
           (( ${+functions[.zi-compile-plugin]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
           if (( OPTS[opt_-a,--all] )) || [[ -z $2 && -z $3 ]]; then
             if (( OPTS[opt_-q,--quiet] )); then
-              .zi-compile-uncompile-all 1 >/dev/null; ___retval=$?
+              .zi-compile-uncompile-all 1 &>/dev/null; ___retval=$?
             else
               +zi-message "{mmdsh}{happy} Zi{rst} » {faint}compiling{rst}{…}"; sleep 2
               .zi-compile-uncompile-all 1; ___retval=$?
@@ -2776,7 +2776,7 @@ zi() {
           builtin set -- "${reply[@]}"
           if (( OPTS[opt_-a,--all] )) || [[ -z $2 && -z $3 ]]; then
             if (( OPTS[opt_-q,--quiet] )); then
-              .zi-compile-uncompile-all 0 >/dev/null; ___retval=$?
+              .zi-compile-uncompile-all 0 &>/dev/null; ___retval=$?
             else
               +zi-message "{mmdsh}{happy} Zi{rst} » {faint}uncompiling{rst}{…}"; sleep 2
               .zi-compile-uncompile-all 0; ___retval=$?
