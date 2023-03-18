@@ -419,7 +419,7 @@ ZI[EXTENDED_GLOB]=""
 # $1 - absolute path to completion file (in COMPLETIONS_DIR)
 # $2 - readlink command (":" or "readlink")
 .zi-get-completion-owner() {
-  builtin setopt localoptions extendedglob nokshglob noksharrays noshwordsplit
+  builtin setopt local_options extended_glob no_ksh_glob no_ksh_arrays no_sh_word_split
 
   local cpath="$1"
   local readlink_cmd="$2"
@@ -538,11 +538,15 @@ ZI[EXTENDED_GLOB]=""
 #
 # $1 - plugin spec (4 formats: user---plugin, user/plugin, user, plugin)
 # $2 - plugin (only when $1 - i.e. user - given)
+# $3 - optional flag: --quiet, -q
 .zi-uninstall-completions() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt nullglob extendedglob warncreateglobal typesetsilent noshortloops
+  builtin setopt null_glob extended_glob warn_create_global typeset_silent no_short_loops
   typeset -a completions symlinked backup_comps
-  local c cfile bkpfile
+  local c cfile bkpfile quiet compinit_run
+
+  [[ $3 = (-q|--quiet) ]] && quiet=1
+
   integer action global_action=0
   .zi-get-path "$1" "$2"
   [[ -e $REPLY ]] && {
@@ -572,7 +576,7 @@ ZI[EXTENDED_GLOB]=""
     if (( action )); then
       +zi-message "{auto}Uninstalling completion \`$cfile' …"
       # Make compinit notice the change
-      .zi-forget-completion "$cfile"
+      .zi-forget-completion "$cfile" "$quiet"
       (( global_action ++ ))
     else
       +zi-message "{auto}Completion \`$cfile' not installed"
@@ -581,7 +585,9 @@ ZI[EXTENDED_GLOB]=""
   if (( global_action > 0 )); then
     +zi-message "{msg}Uninstalled {num}$global_action{rst} completions"
   fi
-  .zi-compinit >/dev/null
+
+  (( quiet )) && compinit_run="--quiet"
+  .zi-compinit 1 1 "$compinit_run"
 } # ]]]
 
 #
@@ -590,7 +596,7 @@ ZI[EXTENDED_GLOB]=""
 
 # FUNCTION: .zi-pager [[[
 .zi-pager() {
-  builtin setopt LOCAL_OPTIONS EQUALS
+  builtin setopt extended_glob local_options equals
   # Quiet mode ? → no pager.
   if (( OPTS[opt_-n,--no-pager] )) {
     cat
@@ -691,7 +697,7 @@ ZI[EXTENDED_GLOB]=""
   keyword="${keyword## ##}"
   keyword="${keyword%% ##}"
   if [[ -n "$keyword" ]]; then
-    builtin print "Installed plugins matching ${ZI[col-info]}$keyword${ZI[col-rst]}:"
+    builtin print "Installed plugins matching ${ZI[col-keyword]}$keyword${ZI[col-rst]}:"
     filtered=( "${(M)ZI_REGISTERED_PLUGINS[@]:#*$keyword*}" )
   else
     filtered=( "${ZI_REGISTERED_PLUGINS[@]}" )
@@ -1295,7 +1301,8 @@ ZI[EXTENDED_GLOB]=""
 .zi-update-or-status() {
   # Set the localtraps option.
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob nullglob warncreateglobal typesetsilent noshortloops
+  builtin setopt extended_glob null_glob warn_create_global typeset_silent no_short_loops no_auto_pushd
+
   local -a arr
   ZI[first-plugin-mark]=${${ZI[first-plugin-mark]:#init}:-1}
   ZI[-r/--reset-opt-hook-has-been-run]=0
@@ -1673,7 +1680,7 @@ ZI[EXTENDED_GLOB]=""
       +zi-message '{info}Initiating parallel update {rst}{…}'
     .zi-update-all-parallel
     retval=$?
-    .zi-compinit 1 1 &>/dev/null
+    .zi-compinit 1 1 --quiet
     rehash
     if (( !OPTS[opt_-q,--quiet] )) {
       +zi-message "{info}The update took {num}${SECONDS}{info} seconds{rst}"
@@ -1743,7 +1750,7 @@ ZI[EXTENDED_GLOB]=""
       }
     fi
   done
-  .zi-compinit 1 1 &>/dev/null
+  .zi-compinit 1 1 --quiet
   if (( !OPTS[opt_-q,--quiet] )) {
     +zi-message "{ok}The update took {num}${SECONDS}{ok} seconds{rst}"
   }
@@ -2019,7 +2026,7 @@ ZI[EXTENDED_GLOB]=""
 #
 # User-action entry point.
 .zi-compiled() {
-  builtin setopt localoptions nullglob
+  builtin setopt local_options null_glob
 
   typeset -a matches m
   matches=( ${ZI[PLUGINS_DIR]}/*/*.zwc(DN) )
@@ -2048,7 +2055,7 @@ ZI[EXTENDED_GLOB]=""
 #
 # User-action entry point.
 .zi-compile-uncompile-all() {
-  builtin setopt localoptions nullglob
+  builtin setopt local_options null_glob
 
   local compile="$1"
   typeset -a plugins
@@ -2109,7 +2116,7 @@ ZI[EXTENDED_GLOB]=""
 #
 # User-action entry point.
 .zi-show-completions() {
-  builtin setopt localoptions nullglob extendedglob nokshglob noksharrays
+  builtin setopt local_options null_glob extended_glob no_ksh_glob no_ksh_arrays
 
   local count="${1:-3}"
   typeset -a completions
@@ -2189,13 +2196,17 @@ ZI[EXTENDED_GLOB]=""
 #
 # User-action entry point.
 .zi-clear-completions() {
-  builtin setopt localoptions nullglob extendedglob nokshglob noksharrays
+  builtin setopt local_options null_glob extended_glob no_ksh_glob no_ksh_arrays
 
   typeset -a completions
   completions=( "${ZI[COMPLETIONS_DIR]}"/_[^_.]*~*.zwc "${ZI[COMPLETIONS_DIR]}"/[^_.]*~*.zwc )
+
   # Find longest completion name
-  local cpath c
+  local quiet cpath c
   integer longest=0
+
+  [[ -n ${OPTS[opt_-q,--quiet]} || $2 = (-q|--quiet) ]] && quiet=1
+
   for cpath in "${completions[@]}"; do
     c="${cpath:t}"
     c="${c#_}"
@@ -2223,11 +2234,13 @@ ZI[EXTENDED_GLOB]=""
       [[ ! -f "$cpath" ]] && stray=1
     fi
     if (( unknown == 1 || stray == 1 )); then
-      +zi-message -n "Removing completion{ehi}:{rst} ${(r:longest+1:: :)c} $REPLY"
-      (( disabled )) && +zi-message -n " {error}[disabled]{col-rst]}"
-      (( unknown )) && +zi-message -n " {error}[unknown file]{rst}"
-      (( stray )) && +zi-message -n " {error}[stray]{rst}"
-      builtin print
+      if (( !quiet )); then
+        +zi-message -n "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » removing{ehi}:{rst} ${(r:longest+1:: :)c} $REPLY"
+        (( disabled )) && +zi-message -n " {faint}[{keyword}disabled{faint}]{rst}"
+        (( unknown )) && +zi-message -n " {faint}[{keyword}unknown file{faint}]{rst}"
+        (( stray )) && +zi-message -n " {faint}[{keyword}stray{faint}]{rst}"
+        builtin print
+      fi
       command rm -f "$cpath"
     fi
   done
@@ -2378,7 +2391,7 @@ ZI[EXTENDED_GLOB]=""
 # $2 - plugin (only when $1 - i.e. user - given)
 .zi-cd() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob warncreateglobal typesetsilent rcquotes
+  builtin setopt extended_glob warn_create_global typeset_silent rc_quotes
 
   .zi-get-path "$1" "$2" && {
     if [[ -e $REPLY ]]; then
@@ -2621,7 +2634,7 @@ builtin print -Pr \"\$ZI[col-obj]Done (with the exit code: \$_retval).%f%b\""
 # $2 - (optional) plugin (only when $1 - i.e. user - given)
 .zi-create() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt localoptions extendedglob warncreateglobal typesetsilent noshortloops rcquotes
+  builtin setopt local_options extended_glob warn_create_global typeset_silent no_short_loops rc_quotes no_auto_pushd
 
   .zi-any-to-user-plugin "$1" "$2"
   local user="${reply[-2]}" plugin="${reply[-1]}"

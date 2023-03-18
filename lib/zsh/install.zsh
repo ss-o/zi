@@ -7,7 +7,7 @@
 builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col-error]}ERROR:%f%b Couldn't find ${ZI[col-obj]}/lib/zsh/side.zsh%f%b."; return 1; }
 
 # FUNCTION: .zi-parse-json [[[
-# Retrievies the ice-list from given profile from the JSON of the package.json.
+# Retrieves the ice-list from given profile from the JSON of the package.json.
 .zi-parse-json() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
   builtin setopt extendedglob warncreateglobal typesetsilent
@@ -284,7 +284,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 # $2 - plugin
 .zi-setup-plugin-dir() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob warncreateglobal noshortloops rcquotes
+  builtin setopt extended_glob warn_create_global typeset_silent no_short_loops rc_quotes
 
   local user=$1 plugin=$2 id_as=$3 remote_url_path=${1:+$1/}$2 local_path tpe=$4 update=$5 version=$6
 
@@ -511,18 +511,21 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 # $3 - if 1, then reinstall, otherwise only install completions that aren't there
 .zi-install-completions() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt nullglob extendedglob warncreateglobal typesetsilent noshortloops
+  builtin setopt null_glob extended_glob warn_create_global typeset_silent no_short_loops
 
   local id_as=$1${2:+${${${(M)1:#%}:+$2}:-/$2}}
   local reinstall=${3:-0} quiet=${${4:+1}:-0}
+
   (( OPTS[opt_-q,--quiet] )) && quiet=1
-  [[ $4 = -Q ]] && quiet=2
+  [[ $4 = -[qQ] ]] && quiet=2
+
   typeset -ga INSTALLED_COMPS SKIPPED_COMPS
   INSTALLED_COMPS=() SKIPPED_COMPS=()
 
   .zi-any-to-user-plugin "$id_as" ""
   local user=${reply[-2]}
   local plugin=${reply[-1]}
+
   .zi-any-colorify-as-uspl2 "$user" "$plugin"
   local abbrev_pspec=$REPLY
 
@@ -530,7 +533,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 
   # Symlink any completion files included in plugin's directory
   typeset -a completions already_symlinked backup_comps
-  local c cfile bkpfile
+  local c cfile bkpfile compinit_run
   # The plugin == . is a semi-hack/trick to handle `creinstall .' properly
   [[ $user == % || ( -z $user && $plugin == . ) ]] && \
   completions=( "${plugin}"/**/_[^_.]*~*(*.zwc|*.html|*.txt|*.png|*.jpg|*.jpeg|*.js|*.md|*.yml|*.ri|_zsh_highlight*|/zsdoc/*|*.ps1)(DN^/) ) || \
@@ -544,9 +547,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
   for c in "${completions[@]}"; do
     cfile="${c:t}"
     bkpfile="${cfile#_}"
-    if [[ ( -z ${already_symlinked[(r)*/$cfile]} || $reinstall = 1 ) &&
-      -z ${backup_comps[(r)*/$bkpfile]}
-    ]]; then
+    if [[ ( -z ${already_symlinked[(r)*/$cfile]} || $reinstall = 1 ) && -z ${backup_comps[(r)*/$bkpfile]} ]]; then
       if [[ $reinstall = 1 ]]; then
         # Remove old files
         command rm -f "${ZI[COMPLETIONS_DIR]}/${cfile}" "${ZI[COMPLETIONS_DIR]}/${bkpfile}"
@@ -563,60 +564,94 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
     fi
   done
 
-  if (( quiet == 1 && (${#INSTALLED_COMPS} || ${#SKIPPED_COMPS}) )) {
-    +zi-message "{msg}Installed {num}${#INSTALLED_COMPS} {msg}completions" \
-      "{nl}{mmdsh} They are stored in{var} \$INSTALLED_COMPS{msg} array"
-    if (( ${#SKIPPED_COMPS} )) {
-      +zi-message "{msg}Skipped installing {num}${#SKIPPED_COMPS}{msg} completions" \
-        "{nl}{mmdsh} They are stored in{var} \$SKIPPED_COMPS{msg} array"
-    }
-  }
+  if (( quiet == 1 && (${#INSTALLED_COMPS} || ${#SKIPPED_COMPS}) )); then
+    +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » " \
+      "{faint}installed and stored {num}${#INSTALLED_COMPS}{faint} in {var}\$INSTALLED_COMPS{faint} array"
+    if (( ${#SKIPPED_COMPS} )); then
+      +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » " \
+        "{faint}skipped {num}${#SKIPPED_COMPS}{faint} already installed and stored in {var}\$SKIPPED_COMPS{faint} array"
+    fi
+  fi
 
   if (( ZSH_SUBSHELL )) {
     builtin print -rl -- $INSTALLED_COMPS >! ${TMPDIR:-/tmp}/zi.installed_comps.$$.lst
     builtin print -rl -- $SKIPPED_COMPS >! ${TMPDIR:-/tmp}/zi.skipped_comps.$$.lst
   }
 
-  .zi-compinit 1 1 &>/dev/null
+  (( quiet )) && compinit_run="--quiet"
+  .zi-compinit 1 1 $compinit_run
 } # ]]]
 # FUNCTION: .zi-compinit [[[
-# User-exposed `compinit' frontend which first ensures that all completions managed by ❮ Zi ❯ are forgotten by Z-shell.
-# After that it runs normal `compinit', which should more easily detect ❮ Zi ❯ completions.
+# User-exposed `compinit' frontend which first ensures that completions managed by Zi completion system are forgotten by Z-shell.
+# After that it runs normal `compinit', which should more easily detect Zi completions.
 #
-# No arguments.
+# $1 - if 1, then run compinit, otherwise only forget completions
+# $2 - if 1, then use -C option to compinit
+# $3 - if -q, --quiet, then don't print anything
 .zi-compinit() {
-  [[ -n ${OPTS[opt_-p,--parallel]} && $1 != 1 ]] && return
+  [[ -n ${OPTS[opt_-p,--parallel]} && $1 != 1 ]] && return 0
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt nullglob extendedglob warncreateglobal typesetsilent
+  builtin setopt null_glob extended_glob warn_create_global typeset_silent
 
-  integer use_C=$2
+  local c quiet cfile bkpfile
+  typeset -i exec_compinit=$1 use_C=$2 action=0 global_action=0
+
+  [[ -n ${OPTS[opt_-q,--quiet]} || $3 = (-q|--quiet) ]] && quiet=1
 
   typeset -a symlinked backup_comps
-  local c cfile bkpfile action
+  symlinked=( ${ZI[COMPLETIONS_DIR]}/_[^_.]*~*.zwc )
+  backup_comps=( ${ZI[COMPLETIONS_DIR]}/[^_.]*~*.zwc )
 
-  symlinked=( "${ZI[COMPLETIONS_DIR]}"/_[^_.]*~*.zwc )
-  backup_comps=( "${ZI[COMPLETIONS_DIR]}"/[^_.]*~*.zwc )
+  (( $+functions[.zi-clear-completions] )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/autoload.zsh" || return 1
+  .zi-clear-completions --quiet
 
-  # Delete completions if they are really there,
-  # either as completions (_fname) or backups (fname)
+  # Forget completions if they are really there, either as completions (_fname) or backups (fname)
   for c in "${symlinked[@]}" "${backup_comps[@]}"; do
-    action=0
     cfile="${c:t}"
-    cfile="_${cfile#_}"
     bkpfile="${cfile#_}"
 
-    #print -Pr "${ZI[col-info]}Processing completion $cfile%f%b"
-    .zi-forget-completion "$cfile"
+    [[ -n ${symlinked[(r)*/$cfile]} || ${backup_comps[(r)*/$bkpfile]} ]] && action+=1
+
+    # Make them available to compinit
+    if (( action > 0 )); then
+      .zi-forget-completion "$cfile" 1
+      (( global_action ++ ))
+    fi
   done
 
-  +zi-message "Initializing completion ({func}compinit{rst}){…}"
-  command rm -f "${ZI[ZCOMPDUMP_PATH]}"
+  if (( global_action > 0 && quiet == 0 )); then
+    if (( ${#symlinked} )); then
+      +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » \
+      {faint}found {num}${#symlinked}{ok} enabled{faint} completions{rst}"
+    fi
 
-  # Workaround for a nasty trick in _vim
-  (( ${+functions[_vim_files]} )) && unfunction _vim_files
+    if (( ${#backup_comps} )); then
+      +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » \
+      {faint}found {num}${#backup_comps}{quos} disabled{faint} completions{rst}"
+    fi
 
-  builtin autoload -Uz compinit
-  compinit ${${(M)use_C:#1}:+-C} -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}"
+    +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » \
+    {faint}refreshed {num}${global_action} {faint}completions{rst}"
+  fi
+
+  (( exec_compinit == 1 )) || return 0
+
+  (( quiet )) || \
+  +zi-message "{mmdsh}{happy} Zi{rst} {faint}[{meta}completion system{faint}]{rst} » \
+  {msg}initializing {func}compinit{rst}…{rst}"
+
+  [[ -f "$ZI[ZCOMPDUMP_PATH]" ]] && command rm -f "$ZI[ZCOMPDUMP_PATH]"
+
+  # Run compinit with -C option if requested
+  builtin autoload -Uz compinit zrecompile
+  compinit ${${(M)use_C:#1}:+-C} -d "$ZI[ZCOMPDUMP_PATH]" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}" 2>/dev/null || return 1
+
+    # If zcompdump exists (and is non-zero), and is older than the .zwc file, then regenerate in the background
+  if [[ -s "$ZI[ZCOMPDUMP_PATH]" && (! -s "${ZI[ZCOMPDUMP_PATH]}.zwc" || "$ZI[ZCOMPDUMP_PATH]" -nt "${ZI[ZCOMPDUMP_PATH]}.zwc") ]]; then
+    {
+      zrecompile -q -p "$ZI[ZCOMPDUMP_PATH]" && command rm -f "${ZI[ZCOMPDUMP_PATH]}.zwc.old" && rehash
+    } &!
+  fi
 } # ]]]
 # FUNCTION: .zi-download-file-stdout [[[
 # Downloads file to stdout.
@@ -754,22 +789,26 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 # $1 - completion function name, e.g. "_cp"; can also be "cp"
 .zi-forget-completion() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob typesetsilent warncreateglobal
+  builtin setopt extended_glob typeset_silent warn_create_global
 
   local f="$1" quiet="$2"
 
   typeset -a commands
   commands=( ${(k)_comps[(Re)$f]} )
 
-  [[ "${#commands}" -gt 0 ]] && (( quiet == 0 )) && builtin print -Prn "Forgetting commands completed by \`${ZI[col-obj]}$f%f%b': "
+  if [[ "${#commands}" -gt 0 ]]; then
+    (( quiet )) || builtin print -Prn "Forgetting commands completed by \`${ZI[col-obj]}$f%f%b': "
+  fi
 
   local k
   integer first=1
+
   for k ( $commands ) {
     unset "_comps[$k]"
     (( quiet )) || builtin print -Prn "${${first:#1}:+, }${ZI[col-info]}$k%f%b"
     first=0
   }
+
   (( quiet || first )) || builtin print
 
   unfunction -- 2>/dev/null "$f"
@@ -781,7 +820,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 # $2 - plugin (only when $1 - i.e. user - given)
 .zi-compile-plugin() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob warncreateglobal typesetsilent noshortloops rcquotes
+  builtin setopt extended_glob warn_create_global typeset_silent no_short_loops rc_quotes no_auto_pushd
 
   local id_as=$1${2:+${${${(M)1:#%}:+$2}:-/$2}} first plugin_dir filename is_snippet
   local -a list
@@ -869,7 +908,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 # to clone subdirectories. This is used to provide a layer of support for Oh-My-Zsh and Prezto.
 .zi-download-snippet() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob warncreateglobal typesetsilent
+  builtin setopt extended_glob warn_create_global typeset_silent no_short_loops rc_quotes no_auto_pushd
 
   local save_url=$1 url=$2 id_as=$3 local_dir=$4 dirname=$5 filename=$6 update=$7
 
@@ -979,7 +1018,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
             .zi-mirror-using-svn "$url" "" "$dirname" || return 4
           }
 
-          # Redundant code, just to compile SVN snippet
+          # Redundant code, just to compile SVN snippets
           if [[ ${ICE[as]} != command ]]; then
             if [[ -n ${ICE[pick]} ]]; then
               list=( ${(M)~ICE[pick]##/*}(DN) $local_dir/$dirname/${~ICE[pick]}(DN) )
@@ -1009,10 +1048,8 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
           }
 
           # Returned is: modification time of the remote file.
-          # Thus, EPOCHSECONDS - REPLY is: allowed window for the
-          # local file to be modified in. ms-$secs is: files accessed
-          # within last $secs seconds. Thus, if there's no match, the
-          # local file is out of date.
+          # Thus, EPOCHSECONDS - REPLY is: allowed window for the local file to be modified in. ms-$secs is:
+          # files accessed within last $secs seconds. Thus, if there's no match, the local file is out of date.
 
           local secs=$(( EPOCHSECONDS - REPLY ))
           # Guard so that it's positive
@@ -1068,8 +1105,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
       )
       retval=$?
 
-      # Overestimate the pull-level to 2 also in error situations
-      # – no hooks will be run anyway because of the error
+      # Overestimate the pull-level to 2 also in error situations – no hooks will be run anyway because of the error.
       ZI[annex-multi-flag:pull-active]=$retval
 
       if [[ $ICE[as] != command && ${+ICE[svn]} -eq 0 ]] {
@@ -1090,7 +1126,8 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
           }
         }
       }
-    } else { # Local-file snippet branch
+    } else {
+      # Local-file snippet branch
       # Local files are (yet…) forcefully copied.
       ZI[annex-multi-flag:pull-active]=3 retval=3
       # Run annexes' atpull hooks (the before atpull-ice ones).
@@ -1493,7 +1530,7 @@ builtin source "${ZI[BIN_DIR]}/lib/zsh/side.zsh" || { builtin print -P "${ZI[col
 # $2 - file
 ziextract() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob typesetsilent noshortloops # warncreateglobal
+  builtin setopt extended_glob typeset_silent no_short_loops
 
   if (( $+commands[file] != 1 )) { +zi-message "{annex}ziextract{ehi}:{rst} {error}The {cmd}file{error} command is required for recognizing the type of data to be processed{rst}"
     return 1
@@ -1767,7 +1804,7 @@ ziextract() {
 # FUNCTION: .zi-extract() [[[
 .zi-extract() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob warncreateglobal typesetsilent
+  builtin setopt extended_glob warn_create_global typeset_silent no_short_loops
   local tpe=$1 extract=$2 local_dir=$3
   (
     builtin cd -q "$local_dir" || {
@@ -1789,9 +1826,6 @@ ziextract() {
     }
   )
 }
-# ]]]
-# FUNCTION: zpextract [[[
-zpextract() { ziextract "$@"; }
 # ]]]
 # FUNCTION: .zi-at-eval [[[
 .zi-at-eval() {
@@ -1892,7 +1926,7 @@ zpextract() { ziextract "$@"; }
 # FUNCTION zicp [[[
 zicp() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob warncreateglobal typesetsilent noshortloops rcquotes
+  builtin setopt extended_glob warn_create_global typeset_silent no_short_loops rc_quotes no_auto_pushd
   local -a mbegin mend match
   local cmd=cp
   if [[ $1 = (-m|--mv) ]] { cmd=mv; shift; }
@@ -1903,7 +1937,7 @@ zicp() {
   local arg
   arg=${${(j: :)@}//(#b)(([[:space:]]~ )#(([^[:space:]]| )##)([[:space:]]~ )#(#B)(->|=>|→)(#B)([[:space:]]~ )#(#b)(([^[:space:]]| )##)|(#B)([[:space:]]~ )#(#b)(([^[:space:]]| )##))/${match[3]:+$match[3] $match[6]\;}${match[8]:+$match[8] $match[8]\;}}
   (
-    if [[ -n $dir ]] { cd $dir || return 1; }
+    if [[ -n $dir ]] { builtin cd -q $dir || return 1; }
     local a b var
     integer retval
     for a b ( "${(s: :)${${(@s.;.)${arg%\;}}:-* .}}" ) {
@@ -2047,10 +2081,7 @@ zimv() {
   [[ -n $atclone ]] && .zi-countdown atclone && {
     local ___oldcd=$PWD
     (( ${+ICE[nocd]} == 0 )) && {
-      () {
-        builtin setopt localoptions noautopushd
-        builtin cd -q "$dir"
-      }
+      () { builtin setopt localoptions noautopushd; builtin cd -q "$dir"; }
     }
     eval "$atclone"
     rc="$?"

@@ -113,8 +113,6 @@ fi
 : ${ZI[ZMODULES_DIR]:=${ZI[HOME_DIR]}/zmodules}
 : ${ZI[ZCOMPDUMP_PATH]:=${ZI[CACHE_DIR]}/.zcompdump}
 : ${ZI[COMPLETIONS_DIR]:=${ZI[HOME_DIR]}/completions}
-# Additional/Optional directories for software/data files.
-: ${ZI[NODE_PATH_DIR]:=${ZPFX}/lib/node_modules}
 
 # Base Directory Specification (XDG)
 # https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html
@@ -140,7 +138,6 @@ ZI[SERVICES_DIR]=${~ZI[SERVICES_DIR]}
 ZI[ZMODULES_DIR]=${~ZI[ZMODULES_DIR]}
 ZI[ZCOMPDUMP_PATH]=${~ZI[ZCOMPDUMP_PATH]}
 ZI[COMPLETIONS_DIR]=${~ZI[COMPLETIONS_DIR]}
-ZI[NODE_PATH_DIR]=${~ZI[NODE_PATH_DIR]}
 
 ZPFX=${~ZPFX}
 XDG_ZI_HOME=${~ZI[HOME_DIR]}
@@ -148,47 +145,41 @@ XDG_ZI_CACHE=${~ZI[CACHE_DIR]}
 XDG_ZI_CONFIG=${~ZI[CONFIG_DIR]}
 
 if [[ -z ${manpath[(re)${ZI[MAN_DIR]}]} ]] && [[ -d ${ZI[MAN_DIR]} ]]; then
-  manpath=( "${ZI[MAN_DIR]}" "${manpath[@]}" )
   typeset -gxU manpath
+  manpath=( "${ZI[MAN_DIR]}" "${manpath[@]}" )
 fi
 
 if [[ -z ${cdpath[(re)${ZI[CDPATH_DIR]}]} ]] && [[ -d ${ZI[CDPATH_DIR]} ]]; then
   builtin setopt auto_cd
-  cdpath=( "${ZI[CDPATH_DIR]}" "${cdpath[@]}" )
   typeset -gxU cdpath CDPATH
+  cdpath=( "${ZI[CDPATH_DIR]}" "${cdpath[@]}" )
 fi
 
 if [[ -z ${mailpath[(re)${ZI[MAIL_DIR]}]} ]]; then
-  mailpath=( "${ZI[MAIL_DIR]}" "${mailpath[@]}" )
   typeset -gxU mailpath MAILPATH
+  mailpath=( "${ZI[MAIL_DIR]}" "${mailpath[@]}" )
 fi
 
 if [[ -z ${path[(re)${ZPFX}/bin]} ]] && [[ -d ${ZPFX}/bin ]]; then
-  path=( "${ZPFX}/bin" "${path[@]}" )
   typeset -gxU path PATH
+  path=( "${ZPFX}/bin" "${path[@]}" )
 fi
 
 if [[ -z ${path[(re)${ZPFX}/sbin]} ]] && [[ -d ${ZPFX}/sbin ]]; then
-  path=( "${ZPFX}/sbin" "${path[@]}" )
   typeset -gxU path PATH
+  path=( "${ZPFX}/sbin" "${path[@]}" )
 fi
 
 if [[ -z ${fpath[(re)${ZI[COMPLETIONS_DIR]}]} ]]; then
-  fpath=( "${ZI[COMPLETIONS_DIR]}" "${fpath[@]}" )
   typeset -gxU fpath FPATH
+  fpath=( "${ZI[COMPLETIONS_DIR]}" "${fpath[@]}" )
 fi
 
 # Export/assign/tie new paths.
 if [[ -z ${logpath[(re)${ZI[LOG_DIR]}]} ]] && [[ -d ${ZI[LOG_DIR]} ]]; then
-  logpath=( "${ZI[LOG_DIR]}" "${logpath[@]}" )
   typeset -gxU logpath LOG_PATH
+  logpath=( "${ZI[LOG_DIR]}" "${logpath[@]}" )
   typeset -gxTU LOG_PATH logpath
-fi
-
-if [[ -z ${nodepath[(re)${ZI[NODE_PATH_DIR]}]} ]] && [[ -d ${ZI[NODE_PATH_DIR]} ]]; then
-  nodepath=( "${ZI[NODE_PATH_DIR]}" "${nodepath[@]}" )
-  typeset -gxU nodepath NODE_PATH
-  typeset -gxTU NODE_PATH nodepath
 fi
 
 ZI[UPAR]=";:^[[A;:^[OA;:\\e[A;:\\eOA;:${termcap[ku]/$'\e'/^\[};:${terminfo[kcuu1]/$'\e'/^\[};:"
@@ -1058,7 +1049,7 @@ builtin setopt noaliases
 # FUNCTION: @zi-substitute. [[[
 @zi-substitute() {
   builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob warncreateglobal typesetsilent noshortloops
+  builtin setopt extended_glob warn_create_global type_set_silent no_short_loops
   local -A ___subst_map
   ___subst_map=(
     "%ID%"   "${id_as_clean:-$id_as}"
@@ -1112,7 +1103,7 @@ builtin setopt noaliases
 # Registers the z-annex inside Zi.
 @zi-register-hook() {
     builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
-    builtin setopt extendedglob nobanghist noshortloops typesetsilent warncreateglobal
+    builtin setopt extended_glob no_bang_hist no_short_loops typeset_silent warn_create_global
   local name="$1" type="$2" handler="$3" icemods="$4" key="zi ${(q)2}"
   ZI_EXTS2[seqno]=$(( ${ZI_EXTS2[seqno]:-0} + 1 ))
   ZI_EXTS2[$key${${(M)type#hook:}:+ ${ZI_EXTS2[seqno]}}]="${ZI_EXTS2[seqno]} z-annex-data: ${(q)name} ${(q)type} ${(q)handler} '' ${(q)icemods}"
@@ -1143,12 +1134,8 @@ builtin setopt noaliases
     command mkdir -p "${ZI[HOME_DIR]}"
     command chmod go-w "${ZI[HOME_DIR]}"
   fi
-  # Set up $ZPFX
   if [[ ! -d ${ZPFX}/bin ]]; then
     command mkdir -p "${ZPFX}/bin"
-  fi
-  if [[ ! -d ${ZPFX}/sbin ]]; then
-    command mkdir -p "${ZPFX}/sbin"
   fi
   if [[ ! -d ${ZPFX}/lib ]]; then
     command mkdir -p "${ZPFX}/lib"
@@ -1183,23 +1170,21 @@ builtin setopt noaliases
     command mkdir -p "${ZI[PLUGINS_DIR]}/_local---zi"
     command chmod go-w "${ZI[PLUGINS_DIR]}"
     command ln -s "${ZI[BIN_DIR]}/lib/_zi" "${ZI[PLUGINS_DIR]}/_local---zi"
-    (( ${+functions[.zi-setup-plugin-dir]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
-    (( ${+functions[.zi-confirm]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/autoload.zsh" || return 1
-    .zi-clear-completions &>/dev/null
-    .zi-compinit &>/dev/null
+    (( ${+functions[.zi-compinit]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
+    .zi-compinit 1 1 --quiet &>/dev/null
   fi
   if [[ ! -d ${ZI[COMPLETIONS_DIR]} ]]; then
     command mkdir "${ZI[COMPLETIONS_DIR]}"
     command chmod go-w "${ZI[COMPLETIONS_DIR]}"
     # Symlink _zi completion into _local---zi directory.
     command ln -s "${ZI[PLUGINS_DIR]}/_local---zi/_zi" "${ZI[COMPLETIONS_DIR]}"
-    (( ${+functions[.zi-setup-plugin-dir]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
-    .zi-compinit &>/dev/null
+    (( ${+functions[.zi-compinit]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
+    .zi-compinit 1 1 --quiet &>/dev/null
   fi
   if [[ ! -d ${ZI[SNIPPETS_DIR]} ]]; then
     command mkdir -p "${ZI[SNIPPETS_DIR]}/OMZ::plugins"
     command chmod go-w "${ZI[SNIPPETS_DIR]}"
-    ( builtin cd ${ZI[SNIPPETS_DIR]}; command ln -s OMZ::plugins plugins; )
+    ( builtin cd -q ${ZI[SNIPPETS_DIR]}; command ln -s OMZ::plugins plugins; )
     command mkdir -p "${ZI[SERVICES_DIR]}"
     command chmod go-w "${ZI[SERVICES_DIR]}"
   fi
@@ -1759,7 +1744,7 @@ builtin setopt noaliases
 # [single-char bits and quoted strings (`...', ,'...', "...")].
 .zi-formatter-auto() {
   builtin emulate -L zsh ${=${options[xtrace]:#off}:+-o xtrace}
-  builtin setopt extendedglob warncreateglobal typesetsilent
+  builtin setopt extended_glob warn_create_global typeset_silent no_auto_pushd
   local out in=$1 i rwmsg match spaces rest
   integer mbegin mend
   local -a ice_order ecmds
@@ -1895,8 +1880,12 @@ builtin setopt noaliases
 } # ]]]
 # FUNCTION: +zi-message. [[[
 +zi-message() {
-  builtin emulate -LR zsh -o extendedglob ${=${options[xtrace]:#off}:+-o xtrace}
-  local opt msg
+  builtin emulate -LR zsh ${=${options[xtrace]:#off}:+-o xtrace}
+  builtin setopt extended_glob warn_create_global typeset_silent no_auto_pushd
+
+  local MATCH REPLY opt msg; integer MBEGIN MEND
+  local -a match mbegin mend reply
+
   [[ $1 = -* ]] && { local opt=$1; shift; }
 
   ZI[__last-formatter-code]=
@@ -2673,7 +2662,7 @@ zi() {
           ;;
         (cclear)
           # Delete stray and improper completions.
-          .zi-clear-completions
+          .zi-clear-completions "$2"
           ;;
         (cdisable)
           if [[ -z $2 ]]; then
@@ -2684,9 +2673,7 @@ zi() {
             if .zi-cdisable "$___f"; then
               (( ${+functions[.zi-forget-completion]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
               .zi-forget-completion "$___f"
-              +zi-message "Initializing completion system ({func}compinit{rst}){…}"
-              builtin autoload -Uz compinit
-              compinit -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}"
+              .zi-compinit 1 1
             else
               ___retval=1
             fi
@@ -2702,42 +2689,35 @@ zi() {
             if .zi-cenable "$___f"; then
               (( ${+functions[.zi-forget-completion]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
               .zi-forget-completion "$___f"
-              +zi-message "Initializing completion system ({func}compinit{rst}){…}"
-              builtin autoload -Uz compinit
-              compinit -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}"
+              .zi-compinit 1 1
             else
               ___retval=1
             fi
           fi
           ;;
         (creinstall)
-          (( ${+functions[.zi-install-completions]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
+          (( $+functions[.zi-install-completions] )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
           # Installs completions for plugin. Enables them all. It is a
           # reinstallation, thus every obstacle gets overwritten or removed.
           [[ $2 = -[qQ] ]] && { 5=$2; shift; }
           .zi-install-completions "${2%%(///|//|/)}" "${3%%(///|//|/)}" 1 "${(M)4:#-[qQ]}"; ___retval=$?
-          [[ -z ${(M)4:#-[qQ]} ]] && +zi-message "Initializing completion ({func}compinit{rst}){…}"
-          builtin autoload -Uz compinit
-          compinit -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}"
           ;;
         (cuninstall)
           if [[ -z $2 && -z $3 ]]; then
             builtin print "Argument needed, try: help"; ___retval=1
           else
-            (( ${+functions[.zi-forget-completion]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
+            (( $+functions[.zi-uninstall-completions] )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/autoload.zsh" || return 1
             # Uninstalls completions for plugin.
             .zi-uninstall-completions "${2%%(///|//|/)}" "${3%%(///|//|/)}"; ___retval=$?
-            +zi-message "Initializing completion ({func}compinit{rst}){…}"
-            builtin autoload -Uz compinit
-            compinit -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}"
           fi
           ;;
         (csearch)
           .zi-search-completions
           ;;
         (compinit)
-          (( ${+functions[.zi-forget-completion]} )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
-          .zi-compinit; ___retval=$?
+          [[ $2 = (-q|--quiet) ]] && { 4=$2; shift; }
+          (( $+functions[.zi-compinit] )) || builtin source "${ZI[BIN_DIR]}/lib/zsh/install.zsh" || return 1
+          .zi-compinit 1 "$2" "$3"; ___retval=$?
           ;;
         (dreport)
           .zi-show-debug-report
@@ -2839,7 +2819,7 @@ zicdclear() { .zi-compdef-clear -q; }
 # A function that can be invoked from within `atinit', `atload', etc. ice-mod.
 # It runs `autoload compinit; compinit' and respects
 # ZI[ZCOMPDUMP_PATH] and ZI[COMPINIT_OPTS].
-zicompinit() { autoload -Uz compinit; compinit -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}"; }
+zicompinit() { builtin autoload -Uz compinit; compinit -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@)${(z@)ZI[COMPINIT_OPTS]}}"; }
 # ]]]
 # FUNCTION: zicompinit_fast. [[[
 # Checking the cached .zcompdump file to see if it must be regenerated adds a noticable delay to zsh startup.
@@ -2847,29 +2827,29 @@ zicompinit() { autoload -Uz compinit; compinit -d "${ZI[ZCOMPDUMP_PATH]}" "${(Q@
 # modify the compdump and compiles mapped to share (total mem reduction) run in background in multiple shells.
 # A function that can be invoked from within `atinit', `atload'
 zicompinit_fast() {
-  autoload -Uz compinit
-  local zcompf="${ZI[ZCOMPDUMP_PATH]}"
-  #local check_ub="$(awk -F= '/^NAME/{print $2}' /etc/os-release | grep 'Ubuntu')"
-  local zcompf_a="${zcompf}.augur"
-  #[[ $check_ub ]] && export skip_global_compinit=1
+  builtin autoload -Uz compinit zrecompile
+
+  if grep -q '^ID.*=.*ubuntu' /etc/os-release 2>/dev/null; then
+    typeset -gx skip_global_compinit=1
+  fi
 
   # Globbing (#qN.mh+24):
   # - '#q' is an explicit glob qualifier that makes globbing work within zsh's [[ ]] construct.
   # - 'N' makes the glob pattern evaluate to nothing when it doesn't match (rather than throw a globbing error)
   # - '.' matches "regular files"
   # - 'mh+24' matches files, directories and etc., that are older than 24 hours.
-  if [[ -e "$zcompf_a" && -f "$zcompf_a"(#qN.mh+24) ]]; then
-    compinit -d "$zcompf"
-    command touch "$zcompf_a"
+
+  # If the .lock file exists and is older than 24 hours, then regenerate the zcompdump
+  if [[ -e "${ZI[ZCOMPDUMP_PATH]}.lock" && -f "${ZI[ZCOMPDUMP_PATH]}.lock"(#qN.mh+24) ]]; then
+    compinit -d "$ZI[ZCOMPDUMP_PATH]"
+    command touch "${ZI[ZCOMPDUMP_PATH]}.lock"
   else
-    compinit -C -d "$zcompf"
+    compinit -C -d "$ZI[ZCOMPDUMP_PATH]"
   fi
-  # if .zcompdump exists (and is non-zero), and is older than the .zwc file, then regenerate
-  if [[ -s "$zcompf" && (! -s "${zcompf}.zwc" || "$zcompf" -nt "${zcompf}.zwc") ]]; then
-    # since file is mapped, it might be mapped right now (current shells), so rename it then make a new one
-    [[ -e "$zcompf.zwc" ]] && command mv -f "$zcompf.zwc" "$zcompf.zwc.old"
-    # compile it mapped, so multiple shells can share it (total mem reduction) run in background
-    { zcompile -M "$zcompf" && command rm -f "$zcompf.zwc.old" }&!
+
+  # If zcompdump exists (and is non-zero), and is older than the .zwc file, then regenerate in the background
+  if [[ -s "$ZI[ZCOMPDUMP_PATH]" && (! -s "${ZI[ZCOMPDUMP_PATH]}.zwc" || "$ZI[ZCOMPDUMP_PATH]" -nt "${ZI[ZCOMPDUMP_PATH]}.zwc") ]]; then
+    { zrecompile -q -p "$ZI[ZCOMPDUMP_PATH]" && command rm -f "$ZI[ZCOMPDUMP_PATH].zwc.old" } &!
   fi
 }
 # ]]]
